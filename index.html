@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TraceBack AI: interactive demo</title>
+<style>
+  :root{
+    --bg:#f4f6f8; --card:#ffffff; --ink:#15202b; --mute:#5b6875; --line:#dde3e9;
+    --teal:#0e7c78; --teal-soft:#d9f0ee; --amber:#b45309; --amber-soft:#fdebd3; --ok:#177245; --bad:#b42318;
+    --mono: ui-monospace, "SF Mono", Consolas, monospace;
+    --sans: "Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{ --bg:#0f161d; --card:#17212b; --ink:#e8eef4; --mute:#9aa8b6; --line:#273543;
+      --teal:#3cc7c0; --teal-soft:#12383a; --amber:#f0a65a; --amber-soft:#3a2a14; --ok:#4cc38a; --bad:#ff7b72; }
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{background:var(--bg); color:var(--ink); font:16px/1.55 var(--sans); padding:24px 16px 64px}
+  .wrap{max-width:880px; margin:0 auto}
+  h1{font-size:clamp(28px,5vw,44px); line-height:1.1; margin:0 0 8px; letter-spacing:-.02em}
+  .sub{color:var(--mute); max-width:60ch; margin:0 0 20px}
+  .note{background:var(--amber-soft); color:var(--ink); border:1px solid var(--amber); border-radius:10px; padding:10px 14px; font-size:14px; margin-bottom:24px}
+  .steps{display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px}
+  .pill{font-size:13px; padding:6px 12px; border-radius:999px; border:1px solid var(--line); color:var(--mute); background:var(--card)}
+  .pill.on{background:var(--teal); border-color:var(--teal); color:#fff; font-weight:600}
+  .pill.done{border-color:var(--teal); color:var(--teal)}
+  @media (prefers-color-scheme: dark){ .pill.on{color:#06201f} }
+  section.card{background:var(--card); border:1px solid var(--line); border-radius:14px; padding:20px; margin-bottom:16px}
+  section.card[hidden]{display:none}
+  h2{font-size:20px; margin:0 0 4px}
+  .hint{color:var(--mute); font-size:14px; margin:0 0 14px}
+  .items{display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:10px}
+  .item{border:1.5px solid var(--line); border-radius:12px; padding:12px; background:var(--bg); cursor:pointer; text-align:left; color:var(--ink); font:inherit}
+  .item:hover{border-color:var(--teal)}
+  .item[aria-pressed="true"]{border-color:var(--teal); background:var(--teal-soft)}
+  .item:focus-visible, button.go:focus-visible, input:focus-visible{outline:3px solid var(--teal); outline-offset:2px}
+  .thumb{height:72px; border-radius:8px; margin-bottom:8px; display:grid; place-items:center}
+  .item b{display:block; font-size:15px} .item span{font-size:13px; color:var(--mute)}
+  button.go{margin-top:16px; background:var(--teal); color:#fff; border:0; border-radius:10px; padding:11px 20px; font:600 15px var(--sans); cursor:pointer}
+  @media (prefers-color-scheme: dark){ button.go{color:#06201f} }
+  button.go:disabled{opacity:.45; cursor:not-allowed}
+  .log{background:#0c1319; color:#c9d6e2; border-radius:10px; padding:14px; font:13px/1.7 var(--mono); min-height:190px; overflow-x:auto}
+  .log .t{color:#6f8396} .log .ok{color:#4cc38a} .log .hl{color:#f0a65a}
+  .cand{border:1px solid var(--line); border-radius:12px; padding:12px 14px; margin-bottom:10px; display:grid; grid-template-columns:1fr auto; gap:6px 14px; align-items:center}
+  .cand.top{border-color:var(--teal); background:var(--teal-soft)}
+  .cand h3{margin:0; font-size:15px} .cand p{margin:0; color:var(--mute); font-size:13px}
+  .score{font:700 20px var(--mono)}
+  .bar{grid-column:1/-1; height:6px; background:var(--line); border-radius:4px; overflow:hidden}
+  .bar i{display:block; height:100%; background:var(--teal); width:0; transition:width .9s ease}
+  @media (prefers-reduced-motion: reduce){ .bar i{transition:none} }
+  label{display:block; font-weight:600; margin-bottom:6px}
+  input[type=text]{width:100%; max-width:420px; padding:10px 12px; border-radius:10px; border:1.5px solid var(--line); background:var(--bg); color:var(--ink); font:inherit}
+  .msg{margin-top:12px; font-size:14px; min-height:20px} .msg.bad{color:var(--bad)} .msg.ok{color:var(--ok)}
+  .unlock{border:1.5px solid var(--ok); border-radius:12px; padding:16px; background:var(--teal-soft)}
+  .unlock code{font:600 15px var(--mono)}
+  .reset{background:none; border:1px solid var(--line); color:var(--mute); border-radius:8px; padding:6px 12px; cursor:pointer; margin-top:12px; font:inherit; font-size:13px}
+  footer{color:var(--mute); font-size:13px; margin-top:28px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>TraceBack AI</h1>
+  <p class="sub">A campus lost-and-found that finds matches for you. Someone drops a photo of what they found, agents search campus channels, and the owner proves it's theirs before any contact is shared.</p>
+  <div class="note"><b>Simulated demo.</b> All posts, scores and contacts below are mock data that show the product flow. The live version replaces the mock steps with TinyFish web agents and CLIP image-text matching.</div>
+
+  <div class="steps" id="steps" aria-label="Progress"></div>
+
+  <section class="card" id="s1">
+    <h2>1. Someone found an item</h2>
+    <p class="hint">Pick what the finder photographed. In the real app this is a one-tap camera drop with no signup.</p>
+    <div class="items" id="items"></div>
+    <button class="go" id="run" disabled>Report found item</button>
+  </section>
+
+  <section class="card" id="s2" hidden>
+    <h2>2. Agents search campus channels</h2>
+    <p class="hint">A TinyFish agent is given a plain-English goal and browses like a person would.</p>
+    <div class="log" id="log" role="log" aria-live="polite"></div>
+  </section>
+
+  <section class="card" id="s3" hidden>
+    <h2>3. Matches ranked by visual similarity</h2>
+    <p class="hint">CLIP compares the finder's photo with each lost-item post. The best match goes to verification.</p>
+    <div id="cands"></div>
+    <button class="go" id="verify" hidden>Verify the top match</button>
+  </section>
+
+  <section class="card" id="s4" hidden>
+    <h2>4. The owner proves it's theirs</h2>
+    <p class="hint" id="q-hint"></p>
+    <label for="ans" id="q"></label>
+    <input type="text" id="ans" autocomplete="off">
+    <div><button class="go" id="check">Submit answer</button></div>
+    <div class="msg" id="msg" role="status"></div>
+  </section>
+
+  <section class="card" id="s5" hidden>
+    <h2>5. Contact released</h2>
+    <div class="unlock" id="unlock"></div>
+    <button class="reset" id="reset">Run the demo again</button>
+  </section>
+
+  <footer>Team Gravitation. Demo page for the TraceBack AI submission.</footer>
+</div>
+
+<script>
+const ITEMS = [
+  { id:"wallet", name:"Black leather wallet", where:"Found near the library entrance", color:"#2b2b2f",
+    secret:{ q:"What is on the back of the college ID inside?", hint:"Only the owner would know a detail that isn't visible in the photo.", a:["blue sticker","blue star","sticker"], reveal:"a blue star sticker" },
+    cands:[ {t:"Lost my black wallet near the library, ID card inside", src:"r/iiitd, 6 h ago", s:92, who:"a***@iiitd.ac.in"},
+            {t:"Missing brown card holder, last seen in the mess", src:"r/iiitd, 1 d ago", s:61, who:"k***@iiitd.ac.in"},
+            {t:"Lost black power bank near the A-block lift", src:"Campus Telegram, 2 d ago", s:34, who:"m***@iiitd.ac.in"} ] },
+  { id:"bottle", name:"Blue steel bottle", where:"Found in Seminar Hall 2", color:"#2f6db5",
+    secret:{ q:"What sticker or name is on the bottle's base?", hint:"Only the owner would know a detail that isn't visible in the photo.", a:["panda","panda sticker"], reveal:"a panda sticker" },
+    cands:[ {t:"Left my blue Milton bottle in a seminar hall yesterday", src:"r/iiitd, 3 h ago", s:88, who:"r***@iiitd.ac.in"},
+            {t:"Lost a navy flask after the gym", src:"Campus Telegram, 1 d ago", s:67, who:"s***@iiitd.ac.in"},
+            {t:"Missing green water bottle, lab block", src:"r/iiitd, 3 d ago", s:29, who:"d***@iiitd.ac.in"} ] },
+  { id:"case", name:"White earbuds case", where:"Found on a bench near the canteen", color:"#d8d8dc",
+    secret:{ q:"What is engraved or written inside the case lid?", hint:"Only the owner would know a detail that isn't visible in the photo.", a:["initials","pk","p.k","p k"], reveal:"the initials PK" },
+    cands:[ {t:"Lost my white earbuds case, canteen side, please help", src:"r/iiitd, 2 h ago", s:90, who:"p***@iiitd.ac.in"},
+            {t:"Missing grey charger pouch, hostel lobby", src:"Campus Telegram, 2 d ago", s:41, who:"v***@iiitd.ac.in"},
+            {t:"Lost white mouse near the library", src:"r/iiitd, 4 d ago", s:37, who:"a***@iiitd.ac.in"} ] }
+];
+const STEPS = ["Report","Agent search","Match","Verify","Contact"];
+const $ = id => document.getElementById(id);
+let chosen = null, tries = 0;
+
+function drawSteps(n){
+  $("steps").innerHTML = STEPS.map((s,i)=>`<span class="pill ${i===n?'on':i<n?'done':''}">${s}</span>`).join("");
+}
+function show(n){
+  ["s1","s2","s3","s4","s5"].forEach((id,i)=>{ $(id).hidden = i>n; });
+  drawSteps(n);
+}
+
+$("items").innerHTML = ITEMS.map(it=>`
+  <button class="item" data-id="${it.id}" aria-pressed="false">
+    <div class="thumb" style="background:${it.color}22"><div style="width:44px;height:30px;border-radius:7px;background:${it.color};border:2px solid ${it.color}"></div></div>
+    <b>${it.name}</b><span>${it.where}</span>
+  </button>`).join("");
+$("items").addEventListener("click",e=>{
+  const b = e.target.closest(".item"); if(!b) return;
+  chosen = ITEMS.find(i=>i.id===b.dataset.id);
+  document.querySelectorAll(".item").forEach(x=>x.setAttribute("aria-pressed", x===b));
+  $("run").disabled = false;
+});
+
+const wait = ms => new Promise(r=>setTimeout(r,ms));
+function line(html){ const d=document.createElement("div"); d.innerHTML=html; $("log").appendChild(d); $("log").scrollTop=1e5; }
+
+$("run").addEventListener("click", async ()=>{
+  $("run").disabled = true; $("log").innerHTML=""; show(1);
+  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches, d = reduce?0:550;
+  line(`<span class="t">00:00</span> photo received: <span class="hl">${chosen.name}</span>`); await wait(d);
+  line(`<span class="t">00:01</span> CLIP encodes image to 512-d vector`); await wait(d);
+  line(`<span class="t">00:02</span> agent goal: "Go to reddit.com/r/iiitd/new. Find posts from the last 24 hours about lost items."`); await wait(d+200);
+  line(`<span class="t">00:04</span> agent: opened r/iiitd, scrolling 25 posts`); await wait(d);
+  line(`<span class="t">00:07</span> agent: opened campus Telegram channel, scrolling 18 posts`); await wait(d);
+  line(`<span class="t">00:09</span> extracted <span class="hl">${chosen.cands.length}</span> lost-item posts with text and photos`); await wait(d);
+  line(`<span class="t">00:10</span> scoring candidates...`); await wait(d);
+  line(`<span class="t">00:11</span> <span class="ok">done</span>, best similarity ${chosen.cands[0].s}%`); await wait(d+300);
+  renderCands(); show(2);
+  $("s3").scrollIntoView({behavior:"smooth", block:"start"});
+});
+
+function renderCands(){
+  $("cands").innerHTML = chosen.cands.map((c,i)=>`
+    <div class="cand ${i===0?'top':''}">
+      <div><h3>${c.t}</h3><p>${c.src}${i===0?" &middot; best match":""}</p></div>
+      <div class="score">${c.s}%</div>
+      <div class="bar"><i data-w="${c.s}"></i></div>
+    </div>`).join("");
+  $("verify").hidden = false;
+  requestAnimationFrame(()=>requestAnimationFrame(()=>document.querySelectorAll(".bar i").forEach(b=>b.style.width=b.dataset.w+"%")));
+}
+
+$("verify").addEventListener("click",()=>{
+  tries = 0; $("msg").textContent=""; $("msg").className="msg"; $("ans").value="";
+  $("q").textContent = chosen.secret.q; $("q-hint").textContent = chosen.secret.hint;
+  show(3); $("ans").focus();
+});
+
+function check(){
+  const v = $("ans").value.trim().toLowerCase();
+  if(!v){ $("msg").className="msg bad"; $("msg").textContent="Type your answer to continue."; return; }
+  if(chosen.secret.a.some(a=>v.includes(a))){
+    $("unlock").innerHTML = `<p style="margin:0 0 8px"><b>Verified.</b> The finder has been notified and your details were shared with them.</p>
+      <p style="margin:0">Finder contact: <code>finder@iiitd.ac.in</code><br>Pickup point: Security desk, main gate</p>`;
+    show(4); $("s5").scrollIntoView({behavior:"smooth", block:"start"});
+  } else {
+    tries++;
+    $("msg").className="msg bad";
+    $("msg").textContent = tries>=2
+      ? `That doesn't match. For this demo, the answer is ${chosen.secret.reveal}.`
+      : "That doesn't match the finder's record. Try again. Contact stays hidden until the answer is right.";
+  }
+}
+$("check").addEventListener("click",check);
+$("ans").addEventListener("keydown",e=>{ if(e.key==="Enter") check(); });
+$("reset").addEventListener("click",()=>{
+  chosen=null; $("run").disabled=true;
+  document.querySelectorAll(".item").forEach(x=>x.setAttribute("aria-pressed","false"));
+  show(0); window.scrollTo({top:0,behavior:"smooth"});
+});
+show(0);
+</script>
+</body>
+</html>
